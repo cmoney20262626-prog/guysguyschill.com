@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Cyber Dash</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      background: #070a14;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    #hud {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 600px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .hud-chip {
+      background: #1e293b;
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+    #canvas-container {
+      position: relative;
+      width: 600px;
+      height: 320px;
+      max-width: 95vw;
+      max-height: 60vh;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      background: #090e1f;
+      border: 2px solid #ec4899;
+      border-radius: 12px;
+      box-shadow: 0 0 25px rgba(236, 72, 153, 0.25);
+      display: block;
+    }
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(7, 10, 20, 0.88);
+      backdrop-filter: blur(4px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+    }
+    #overlay.hidden { display: none; }
+    h1 { font-size: 26px; color: #f472b6; margin-bottom: 8px; font-weight: 800; }
+    p { font-size: 13px; color: #94a3b8; margin-bottom: 16px; text-align: center; }
+    button {
+      background: #db2777;
+      color: white;
+      border: none;
+      padding: 10px 24px;
+      font-size: 15px;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover { background: #be185d; }
+    #touch-panel {
+      display: flex;
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .ctrl-btn {
+      padding: 10px 28px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: #f8fafc;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .ctrl-btn:active { background: #db2777; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div class="hud-chip" style="color: #38bdf8;">DISTANCE: <span id="dist">0</span>m</div>
+    <div class="hud-chip" style="color: #fbbf24;">COINS: <span id="coins">0</span></div>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="canvas" width="600" height="320"></canvas>
+    <div id="overlay">
+      <h1 id="overlay-title">CYBER DASH</h1>
+      <p id="overlay-desc">Press <b>Spacebar</b> / <b>Up Arrow</b> to Jump.<br>Press <b>Down Arrow</b> to Slide.</p>
+      <button id="start-btn">RUN NOW</button>
+    </div>
+  </div>
+
+  <div id="touch-panel">
+    <button class="ctrl-btn" id="btn-slide">SLIDE ▼</button>
+    <button class="ctrl-btn" id="btn-jump" style="background: #db2777;">JUMP ▲</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const distEl = document.getElementById('dist');
+    const coinsEl = document.getElementById('coins');
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlay-title');
+    const startBtn = document.getElementById('start-btn');
+
+    const GROUND_Y = 260;
+    let player = {
+      x: 70,
+      y: GROUND_Y - 40,
+      w: 26,
+      h: 40,
+      vy: 0,
+      isGrounded: true,
+      isSliding: false
+    };
+
+    let obstacles = [];
+    let coins = [];
+    let gameSpeed = 5;
+    let distance = 0;
+    let coinCount = 0;
+    let isRunning = false;
+    let spawnTimer = 0;
+
+    // Web Audio FX
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playBeep(freq, type = 'sine', dur = 0.08) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + dur);
+      } catch(e) {}
+    }
+
+    function jump() {
+      if (!isRunning) return;
+      if (player.isGrounded) {
+        player.vy = -12;
+        player.isGrounded = false;
+        playBeep(450, 'triangle', 0.08);
+      }
+    }
+
+    function slide(start) {
+      if (!isRunning) return;
+      if (start && player.isGrounded) {
+        player.isSliding = true;
+        player.h = 22;
+        player.y = GROUND_Y - 22;
+      } else {
+        player.isSliding = false;
+        player.h = 40;
+        player.y = GROUND_Y - 40;
+      }
+    }
+
+    function start() {
+      player.y = GROUND_Y - 40;
+      player.vy = 0;
+      player.isGrounded = true;
+      player.isSliding = false;
+      player.h = 40;
+      obstacles = [];
+      coins = [];
+      gameSpeed = 5.2;
+      distance = 0;
+      coinCount = 0;
+      distEl.innerText = '0';
+      coinsEl.innerText = '0';
+      overlay.classList.add('hidden');
+      isRunning = true;
+      requestAnimationFrame(loop);
+    }
+
+    function gameOver() {
+      isRunning = false;
+      playBeep(160, 'sawtooth', 0.3);
+      overlayTitle.innerText = 'RUN TERMINATED';
+      document.getElementById('overlay-desc').innerText = `Traveled ${Math.floor(distance)} meters · Collected ${coinCount} coins`;
+      startBtn.innerText = 'TRY AGAIN';
+      overlay.classList.remove('hidden');
+    }
+
+    function loop() {
+      if (!isRunning) return;
+
+      distance += 0.15;
+      distEl.innerText = Math.floor(distance);
+      gameSpeed = 5.2 + Math.min(6, distance * 0.005);
+
+      // Player physics
+      if (!player.isGrounded) {
+        player.vy += 0.65;
+        player.y += player.vy;
+        if (player.y >= GROUND_Y - player.h) {
+          player.y = GROUND_Y - player.h;
+          player.vy = 0;
+          player.isGrounded = true;
+        }
+      }
+
+      // Spawn obstacles & coins
+      spawnTimer++;
+      if (spawnTimer > 75) {
+        spawnTimer = 0;
+        const type = Math.random();
+        if (type < 0.6) {
+          // Low barrier (jump over)
+          obstacles.push({ x: canvas.width, y: GROUND_Y - 32, w: 22, h: 32, type: 'low' });
+        } else {
+          // High laser barrier (slide under)
+          obstacles.push({ x: canvas.width, y: GROUND_Y - 70, w: 26, h: 38, type: 'high' });
+        }
+
+        // Spawn coin
+        if (Math.random() < 0.5) {
+          coins.push({ x: canvas.width + 100, y: GROUND_Y - 50, r: 8, collected: false });
+        }
+      }
+
+      // Update obstacles
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.x -= gameSpeed;
+
+        // Collision check
+        if (player.x + player.w > obs.x && player.x < obs.x + obs.w &&
+            player.y + player.h > obs.y && player.y < obs.y + obs.h) {
+          gameOver();
+          return;
+        }
+
+        if (obs.x + obs.w < 0) obstacles.splice(i, 1);
+      }
+
+      // Update coins
+      for (let i = coins.length - 1; i >= 0; i--) {
+        const c = coins[i];
+        c.x -= gameSpeed;
+
+        if (!c.collected &&
+            player.x + player.w > c.x - c.r && player.x < c.x + c.r &&
+            player.y + player.h > c.y - c.r && player.y < c.y + c.r) {
+          c.collected = true;
+          coinCount++;
+          coinsEl.innerText = coinCount;
+          playBeep(750, 'sine', 0.06);
+        }
+
+        if (c.x < -20 || c.collected) coins.splice(i, 1);
+      }
+
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    function render() {
+      ctx.fillStyle = '#090e1f';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Cyber grid background
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      const offset = (distance * 10) % 40;
+      for (let x = -offset; x < canvas.width; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, GROUND_Y);
+        ctx.stroke();
+      }
+
+      // Ground plane
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+      ctx.fillStyle = '#ec4899';
+      ctx.shadowColor = '#ec4899';
+      ctx.shadowBlur = 10;
+      ctx.fillRect(0, GROUND_Y, canvas.width, 3);
+      ctx.shadowBlur = 0;
+
+      // Obstacles
+      obstacles.forEach(obs => {
+        if (obs.type === 'low') {
+          ctx.fillStyle = '#f43f5e';
+          ctx.shadowColor = '#f43f5e';
+          ctx.shadowBlur = 8;
+          ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+        } else {
+          ctx.fillStyle = '#a855f7';
+          ctx.shadowColor = '#a855f7';
+          ctx.shadowBlur = 8;
+          ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+          ctx.fillStyle = '#f43f5e';
+          ctx.fillRect(obs.x - 4, obs.y + obs.h - 4, obs.w + 8, 4);
+        }
+      });
+      ctx.shadowBlur = 0;
+
+      // Coins
+      ctx.fillStyle = '#fbbf24';
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur = 8;
+      coins.forEach(c => {
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+
+      // Player
+      ctx.fillStyle = '#38bdf8';
+      ctx.shadowColor = '#38bdf8';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.roundRect(player.x, player.y, player.w, player.h, 4);
+      ctx.fill();
+      // Eye visor
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(player.x + player.w - 8, player.y + 6, 6, 4);
+      ctx.shadowBlur = 0;
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.key === 'ArrowUp' || e.key === 'w') {
+        e.preventDefault();
+        jump();
+      } else if (e.key === 'ArrowDown' || e.key === 's') {
+        slide(true);
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 's') {
+        slide(false);
+      }
+    });
+
+    document.getElementById('btn-jump').onclick = jump;
+    document.getElementById('btn-slide').onmousedown = () => slide(true);
+    document.getElementById('btn-slide').onmouseup = () => slide(false);
+    document.getElementById('btn-slide').ontouchstart = () => slide(true);
+    document.getElementById('btn-slide').ontouchend = () => slide(false);
+
+    startBtn.onclick = start;
+    render();
+  </script>
+</body>
+</html>
