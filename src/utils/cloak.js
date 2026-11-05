@@ -64,6 +64,15 @@ export function triggerPanicRedirect(customUrl) {
   window.location.replace(target);
 }
 
+export function resolveGameUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const clean = url.replace(/^\.?\//, '');
+  const base = import.meta.env.BASE_URL || './';
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  return `${cleanBase}${clean}`;
+}
+
 export function openInAboutBlank(url, title) {
   const win = window.open('about:blank', '_blank');
   if (!win) {
@@ -78,7 +87,9 @@ export function openInAboutBlank(url, title) {
   iframe.style.width = '100vw';
   iframe.style.height = '100vh';
   iframe.style.border = 'none';
-  iframe.src = window.location.origin + url;
+  const resolvedUrl = resolveGameUrl(url);
+  const fullUrl = new URL(resolvedUrl, window.location.href).href;
+  iframe.src = fullUrl;
   win.document.body.style.margin = '0';
   win.document.body.style.overflow = 'hidden';
   win.document.body.appendChild(iframe);

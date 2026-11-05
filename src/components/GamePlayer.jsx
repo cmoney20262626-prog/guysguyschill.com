@@ -12,7 +12,7 @@ import {
   Gamepad,
   Info
 } from 'lucide-react';
-import { openInAboutBlank } from '../utils/cloak.js';
+import { openInAboutBlank, resolveGameUrl } from '../utils/cloak.js';
 
 export const GamePlayer = ({
   game,
@@ -49,7 +49,8 @@ export const GamePlayer = ({
 
   // Copy Iframe HTML embed code
   const handleCopyIframe = () => {
-    const embedCode = `<iframe src="${window.location.origin}${game.iframeUrl}" width="800" height="600" frameborder="0" allow="autoplay; fullscreen; keyboard" allowfullscreen></iframe>`;
+    const fullUrl = new URL(resolveGameUrl(game.iframeUrl), window.location.href).href;
+    const embedCode = `<iframe src="${fullUrl}" width="800" height="600" frameborder="0" allow="autoplay; fullscreen; keyboard" allowfullscreen></iframe>`;
     navigator.clipboard.writeText(embedCode);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
@@ -111,7 +112,7 @@ export const GamePlayer = ({
           <iframe
             key={iframeKey}
             ref={iframeRef}
-            src={game.iframeUrl}
+            src={resolveGameUrl(game.iframeUrl)}
             title={game.title}
             className="w-full h-full border-0 bg-slate-950"
             allow="autoplay; fullscreen; keyboard; gamepad"

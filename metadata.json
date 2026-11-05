@@ -2,5 +2,7 @@
   "name": "VaultArcade - Unblocked Games Portal",
   "description": "Fast unblocked HTML5 arcade and puzzle games in full-screen iframe player with custom JSON game libraries, favorites, and tab disguise cloaking.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
